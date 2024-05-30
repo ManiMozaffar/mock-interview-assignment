@@ -126,30 +126,25 @@ class KnowledgeBaseManager:
         if created_index is not None:
             self.index_cache[self.kb.hashable_key()] = created_index
 
-    def add_document_to_kb(self, text: str) -> EmbeddedDocument:
+    def add_document_to_kb(
+        self, text: str, doc_id: EmbeddedDocumentId | None = None
+    ) -> EmbeddedDocument:
         """
         Add a document to the knowledge base.
+        Re-uses the previous index, to attach the new embedding to it to buy some performance
+            to not recreate the index again
 
         Attributes:
             text: The text of the document to add.
+            doc_id: The id of the document to add. If not provided, a new id will be generated.
         """
         with limit_dict_size(self.index_cache, self.max_to_memorize):
             old_index = self.kb.hashable_key()
-            doc = self.get_embed_document(text)
+            doc = self.get_embed_document(text, doc_id)
             self.kb.documents[doc.id] = doc
 
-            # drop old index and create a new one
-            # this is optimization because we don't want to recreate the index every time we add a document
-            # since the model already support incremental indexing
             db = self.index_cache.pop(old_index, None)
-
-            if db is None:
-                # if the index is not in the cache, it means it's not created yets
-                created_index = _create_faiss_index(self.kb, self.model)
-                if created_index is not None:
-                    self.index_cache[self.kb.hashable_key()] = created_index
-            else:
-                # if the index is in the cache, we can just add the new document to the existing index
+            if db:
                 db.add_embeddings([(doc.text, doc.embedding)])
 
         return doc
@@ -175,7 +170,7 @@ class KnowledgeBaseManager:
         If not, creates a new index and returns it.
 
         Raises:
-            FAISSCreationFailed: If the index creation fails.
+            FAISSCreationFailed: if there is no document in the knowledge base yet.
         """
         with limit_dict_size(self.index_cache, self.max_to_memorize):
             hash_key = self.kb.hashable_key()
@@ -186,17 +181,24 @@ class KnowledgeBaseManager:
             if new_index is not None:
                 self.index_cache[hash_key] = new_index
                 return new_index
+
+            # TODO: this invariant could be avoided by forcing each knowledge base to have at least one document
+            # on the initialization, but that affect business logic as well
+
             raise FAISSCreationFailed(kb_id=self.kb.id)
 
-    def get_embed_document(self, text: str) -> EmbeddedDocument:
+    def get_embed_document(
+        self, text: str, doc_id: EmbeddedDocumentId | None = None
+    ) -> EmbeddedDocument:
         """
         Embed a document and return it.
 
         Attributes:
             text: The text of the document to embed.
+            doc_id: The id of the document. If not provided, a new id will be generated.
         """
         return EmbeddedDocument(
-            id=EmbeddedDocumentId(uuid4()),
+            id=doc_id or EmbeddedDocumentId(uuid4()),
             text=text,
             embedding=self.model.embed_documents([text])[0],
         )

@@ -13,6 +13,7 @@ def test_memorization_state_validity():
 
     kb_manager.add_document_to_kb("Some text")
     # is idempotent, should not create new index once it's created
+    kb_manager.kb.hashable_key()
     kb_manager.get_or_create_index()
     kb_manager.get_or_create_index()
     kb_manager.get_or_create_index()
@@ -21,18 +22,26 @@ def test_memorization_state_validity():
 
     # adding new document should not create a new index
     # as we reuse the same index for performance
-    kb_manager.add_document_to_kb("Some New Text")
-    kb_manager.get_or_create_index()
+    added_document = kb_manager.add_document_to_kb("Some New Text")
+    old_index = kb_manager.get_or_create_index()
+    old_key = kb_manager.kb.hashable_key()
     kb_manager.get_or_create_index()
     kb_manager.get_or_create_index()
     assert len(kb_manager.index_cache) == 1
 
     # removing a document should create a new index always
-    some_random_doc = list(kb_manager.kb.documents.values())[0]
-    kb_manager.remove_document_from_kb(some_random_doc)
+    kb_manager.remove_document_from_kb(added_document)
     kb_manager.get_or_create_index()
     kb_manager.get_or_create_index()
     assert len(kb_manager.index_cache) == 2
+
+    # adding back the removed document should not create a new index
+    # since we already memorized the state
+    kb_manager.add_document_to_kb(added_document.text, added_document.id)
+    new_index = kb_manager.get_or_create_index()
+    new_key = kb_manager.kb.hashable_key()
+    assert new_key == old_key
+    assert new_index is old_index
 
     # check that the index never gets more than 5
     for _ in range(10):
