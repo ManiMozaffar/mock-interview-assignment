@@ -1,12 +1,20 @@
-dev: # run the app in development mode
+# run the app in development mode
+dev:
   rye run  uvicorn src.app:app --reload --port 8000
 
-test query="." *args='': # run test with pytest
+# install project using rye
+install:
+  rye sync -f
+
+# run test with pytest
+test query="." *args='':
   rye run pytest tests -k {{query}} --tb=short --show-capture stdout {{args}}
 
-docs: # generate the documentation
+# generate the documentation
+docs:
   rye run mkdocs serve
 
-quality: # run all quality checks
+# run all quality checks
+quality:
   rye run pyright src
   rye run ruff check src
